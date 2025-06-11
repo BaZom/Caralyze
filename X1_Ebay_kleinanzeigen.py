@@ -23,7 +23,7 @@ import logging
 
 # --- Telegram Bot Configuration ---
 
-TELEGRAM_BOT_TOKEN = "7575378440:AAF0LaFLiejkcQC3JEApSflaqe96t-oOAKU" # your bot token
+TELEGRAM_BOT_TOKEN =  # your bot token
 
 TELEGRAM_CHAT_ID = "-1002705250898"  # your numeric Chat ID
 
