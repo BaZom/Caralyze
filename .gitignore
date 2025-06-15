@@ -18,10 +18,8 @@ __pycache__/
 *.log
 
 # Data files - exclude all generated listing data
-storage/listings/*.json
-cli/data/*.json
+storage/*.json
 scraper/*.json
-scraper/latest_results.json
 
 # Temporary files
 *.tmp

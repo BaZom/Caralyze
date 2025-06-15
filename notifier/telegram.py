@@ -103,7 +103,7 @@ def format_car_listing_message(listing):
 
 if __name__ == "__main__":
     # Test the Telegram notifier
-    test_message = "🚗 Test message from Caralyze Car Scraper!"
+    test_message = "🚗 Test message from VroomSniffer Car Scraper!"
     success, error = send_telegram_message(test_message)
     
     if success:

@@ -1,6 +1,12 @@
-# 🚗 Caralyze - Car Scraper System
+# 🚗 VroomSniffer - Car Monitoring System
 
-A modern, modular web scraping system designed to collect car listings from eBay Kleinanzeigen, detect new listings, and send notifications via Telegram. Built with Python, Playwright, and Streamlit.
+<div align="center">
+  <img src="ui/resources/logo3.jpg" alt="VroomSniffer Logo" width="300">
+</div>
+
+> **📝 Note: This is a hobby project created for educational and personal use only.**
+
+A modern, modular web scraping system designed to collect car listings from various online marketplaces, detect new listings, and send notifications via Telegram. Built with Python, Playwright, and Streamlit.
 
 ## ✨ Key Features
 
@@ -38,7 +44,7 @@ playwright install
 
 **Test the scraper:**
 ```bash
-python cli/main.py run "https://www.kleinanzeigen.de/s-autos/bmw/k0c216"
+python cli/main.py run "https://www.example-marketplace.com/s-autos/bmw/k0c216"
 ```
 
 **View results:**
@@ -58,11 +64,11 @@ streamlit run ui/streamlit_app.py
 The CLI provides the primary interface for running the scraper and managing results:
 
 ```bash
-# Run the scraper with a Kleinanzeigen search URL
-python cli/main.py run "https://www.kleinanzeigen.de/s-autos/bmw/k0c216"
+# Run the scraper with a marketplace search URL
+python cli/main.py run "https://marketplace-url.com/search-cars"
 
 # Run with auto-notifications (sends new listings automatically)
-python scraper/ebay_kleinanzeigen_engine.py --url "..." --notify --notify-count 3
+python scraper/engine.py --url "..." --notify --notify-count 3
 
 # List the latest scraped listings
 python cli/main.py list
@@ -126,17 +132,18 @@ car_scraper/
 ├── requirements.txt
 ├── cli/                     # Command-line interface
 │   ├── main.py             # Main CLI application
-│   ├── README.md           # CLI documentation
-│   └── data/               # CLI-specific data storage
+│   └── README.md           # CLI documentation
 ├── ui/                     # Web interface
 │   └── streamlit_app.py    # Streamlit web app
 ├── scraper/                # Scraping engine
-│   └── ebay_kleinanzeigen_engine.py
+│   └── engine.py           # Main scraping engine
 ├── services/               # Business logic layer
-│   └── caralyze_service.py
+│   └── vroomsniffer_service.py
 ├── storage/                # Data persistence
 │   ├── db.py              # Database operations
-│   └── listings/          # JSON data storage
+│   ├── latest_results.json      # Latest scraping results
+│   ├── latest_new_results.json  # New listings from last run
+│   └── all_old_results.json     # Historical listings cache
 ├── notifier/              # Notification system
 │   └── telegram.py        # Telegram integration
 ├── proxy/                 # Proxy management
@@ -157,11 +164,10 @@ car_scraper/
 ### Core Components
 - `cli/` → **Command-line interface** (organized in dedicated folder)
   - `cli/main.py` → Main CLI application
-  - `cli/data/` → CLI-specific data storage
 - `ui/` → **Web interface** (Streamlit app)
 - `scraper/` → **Scraping engine** (Playwright logic)
 - `services/` → **Business logic** (service layer)
-- `storage/` → **Data persistence** (SQLite/PostgreSQL)
+- `storage/` → **Centralized data storage** (JSON files, database connections)
 - `notifier/` → **Notifications** (Telegram messaging)
 
 ### Supporting Components
@@ -229,6 +235,19 @@ The project follows a clean, modular architecture with separation of concerns:
 - **Import errors**: Ensure you're in the virtual environment and all dependencies are installed
 - **Scraping failures**: Check if the target website structure has changed
 - **Telegram not working**: Verify bot token and chat ID in the notifier configuration
+
+---
+
+## ⚠️ Disclaimer
+
+**This is a hobby project created for educational and personal use only.**
+
+- **Educational Purpose**: This project is intended for learning web scraping techniques and automation concepts
+- **Personal Use**: Use this tool responsibly and only for personal research and learning
+- **Respect Website Terms**: Always respect website terms of service and robots.txt files
+- **Rate Limiting**: Implement appropriate delays and respect server resources
+- **No Commercial Use**: This project is not intended for commercial or large-scale scraping operations
+- **User Responsibility**: Users are responsible for ensuring their usage complies with applicable laws and regulations
 
 ---
 

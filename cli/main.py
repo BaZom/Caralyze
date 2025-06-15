@@ -5,8 +5,8 @@
 # USAGE EXAMPLES:
 # ===============
 #
-# 1. Run the scraper with a Kleinanzeigen URL:
-#    python cli/main.py run "https://www.kleinanzeigen.de/s-autos/bmw/k0c216"
+# 1. Run the scraper with a marketplace URL:
+#    python cli/main.py run "https://marketplace-url.com/search-cars"
 #
 # 2. List the latest scraped listings:
 #    python cli/main.py list
@@ -22,7 +22,7 @@
 # WORKFLOW:
 # =========
 # 1. First, run the scraper to get fresh data:
-#    python cli/main.py run "<your-kleinanzeigen-search-url>"
+#    python cli/main.py run "<your-marketplace-search-url>"
 #
 # 2. Browse the results:
 #    python cli/main.py list
@@ -35,9 +35,9 @@
 #
 # DATA STORAGE:
 # =============
-# - Latest scraping results: cli/data/latest_results.json
-# - Historical data: cli/data/all_old_results.json
-# - New listings only: cli/data/latest_new_results.json
+# - Latest scraping results: storage/latest_results.json
+# - Historical data: storage/all_old_results.json
+# - New listings only: storage/latest_new_results.json
 #
 # NOTES:
 # ======
@@ -58,14 +58,14 @@ sys.path.append(str(project_root))
 
 from notifier.telegram import send_telegram_message, format_car_listing_message
 
-# CLI-specific data paths
-CLI_DATA_DIR = Path(__file__).parent / "data"
-LATEST_RESULTS_PATH = CLI_DATA_DIR / "latest_results.json"
-ALL_RESULTS_PATH = CLI_DATA_DIR / "all_old_results.json"
-NEW_RESULTS_PATH = CLI_DATA_DIR / "latest_new_results.json"
+# CLI-specific data paths - using centralized storage directory
+STORAGE_DIR = Path(__file__).parent.parent / "storage"
+LATEST_RESULTS_PATH = STORAGE_DIR / "latest_results.json"
+ALL_RESULTS_PATH = STORAGE_DIR / "all_old_results.json"
+NEW_RESULTS_PATH = STORAGE_DIR / "latest_new_results.json"
 
-# Create CLI data directory if it doesn't exist
-CLI_DATA_DIR.mkdir(exist_ok=True)
+# Create storage directory if it doesn't exist
+STORAGE_DIR.mkdir(exist_ok=True)
 
 def _check_listings_exist():
     """Helper function to check if listings exist and print error if not"""
@@ -224,10 +224,9 @@ def copy_scraper_results():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Caralyze Car Scraper CLI - Interact with JSON-based listing data",
-        epilog="""
+        description="VroomSniffer Car Scraper CLI - Interact with JSON-based listing data",        epilog="""
 EXAMPLES:
-  %(prog)s run "https://www.kleinanzeigen.de/s-autos/bmw/k0c216"
+  %(prog)s run "https://www.example-marketplace.com/s-autos/bmw/k0c216"
   %(prog)s list
   %(prog)s search "bmw x5"  
   %(prog)s send 3
@@ -297,13 +296,13 @@ For more advanced features, use the Streamlit UI:
     )    # Run command
     run_parser = subparsers.add_parser(
         "run", 
-        help="Run the scraper engine with a direct Kleinanzeigen URL",
-        description="Execute the car scraper with a specific Kleinanzeigen search URL. Results will be saved to cli/data/latest_results.json"
+        help="Run the scraper engine with a direct marketplace URL",
+        description="Execute the car scraper with a specific marketplace search URL. Results will be saved to storage/latest_results.json"
     )
     run_parser.add_argument(
         "url", 
         type=str, 
-        help="Direct Kleinanzeigen search URL (e.g., 'https://www.kleinanzeigen.de/s-autos/bmw/k0c216')"
+        help="Direct marketplace search URL (e.g., 'https://www.example-marketplace.com/s-autos/bmw/k0c216')"
     )
     run_parser.add_argument(
         "--notify", 
@@ -319,7 +318,7 @@ For more advanced features, use the Streamlit UI:
     version_parser = subparsers.add_parser(
         "version", 
         help="Show version information",
-        description="Display version and system information for the Caralyze car scraper."
+        description="Display version and system information for the VroomSniffer car scraper."
     )
 
     args = parser.parse_args()
@@ -335,10 +334,10 @@ For more advanced features, use the Streamlit UI:
     elif args.command == "notify":
         notify_new_findings(args.keyword)
     elif args.command == "version":
-        print("🚗 Caralyze Car Scraper v2.0.0 (Refactored)")
+        print("🚗 VroomSniffer Car Scraper v2.0.0 (Refactored)")
     elif args.command == "run":
         # Run the Playwright scraper engine with the given URL
-        scraper_path = project_root / "scraper" / "ebay_kleinanzeigen_engine.py"
+        scraper_path = project_root / "scraper" / "engine.py"
         
         # Prepare scraper arguments
         scraper_args = [sys.executable, str(scraper_path), "--url", args.url]

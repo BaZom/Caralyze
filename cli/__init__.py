@@ -1,2 +1,2 @@
 # CLI Package
-# This package contains the command-line interface for the Caralyze car scraper project
+# This package contains the command-line interface for the VroomSniffer car scraper project

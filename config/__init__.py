@@ -1,3 +1,3 @@
 """
-Configuration package for CarAlyze application.
+Configuration package for VroomSniffer application.
 """

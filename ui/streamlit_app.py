@@ -1,334 +1,261 @@
+import streamlit as st
 import sys
 from pathlib import Path
-import streamlit as st
-import pandas as pd
-import json
-import re
-import time
 
 # Add the parent directory to the path so we can import from local modules
 sys.path.append(str(Path(__file__).parent.parent))
 
-from config.car_models import CAR_MAKES, get_models_for_make
-from notifier.telegram import send_telegram_message, format_car_listing_message
-from services.caralyze_service import (
-    get_filter_key,
-    load_json_dict,
-    get_listings_for_filter,
-    show_statistics,
-    manual_send_listings
-)
-from ui.filters import get_sidebar_filters
-from ui.results import display_results
-from ui.telegram_controls import manual_send_listings_ui, telegram_test_button
-
-def build_search_url_ui(filters):
-    """Build a Kleinanzeigen search URL from the given filter dictionary."""
-    base_url = "https://www.kleinanzeigen.de/s-autos/"
-    price_path = ""
-    if filters.get("price_range"):
-        min_price, max_price = filters["price_range"]
-        price_path = f"preis:{min_price}:{max_price}/"
-    make = filters.get("car_make", "").lower()
-    model = filters.get("car_model", "").lower()
-    make_model_path = ""
-    if make and model:
-        make_model_path = f"{make}-{model}/"
-    elif make:
-        make_model_path = f"{make}/"
-    url = base_url + price_path + make_model_path + "k0c216"
-    params = []
-    if filters.get("year_range"):
-        params.append(f"autos.ez_i:{filters['year_range'][0]},{filters['year_range'][1]}")
-    if filters.get("max_mileage"):
-        params.append(f"autos.km_i:,{filters['max_mileage']}")
-    if filters.get("transmission") and filters['transmission'].lower() != "any":
-        params.append(f"autos.shift_s:{filters['transmission'].lower()}")
-    if params:
-        url += "+" + "+".join(params)
-    return url
-
-def show_statistics_ui(listings_data, show_trend=True):
-    """Display statistics and optionally a price trend chart."""
-    avg_price, count, prices = show_statistics(listings_data)
-    if show_trend and prices:
-        st.metric("Average Price", f"€{avg_price:,}")
-        st.metric("Total Listings", f"{len(listings_data)}")
-        chart_data = pd.DataFrame({"index": range(len(prices)), "price": prices})
-        st.line_chart(chart_data.set_index("index"))
-    return avg_price, count
-
-st.set_page_config(page_title="CarAlyze - Car Monitor", page_icon="🚗", layout="wide")
-
-def get_sidebar_filters():
-    """Render the sidebar UI for filter and settings."""
-    st.header("🔍 Search Filters")
-    
-    # Custom URL option
-    custom_url = st.text_input("Custom Search URL (optional)")
-    if custom_url:
-        st.info("✅ Using custom URL")
-    else:
-        st.info("ℹ️ Using filters below")
-    
-    # Car filters
-    st.subheader("Vehicle Filters")
-    car_make = st.selectbox("Car Make", CAR_MAKES)
-    models = ["(Any)"] + get_models_for_make(car_make)
-    car_model = st.selectbox("Model", models)
-    if car_model == "(Any)":
-        car_model = ""
-      # Price and specs
-    price_range = st.slider("Price Range (€)", 1000, 50000, (5000, 20000), 1000)
-    year_range = st.slider("Year Range", 2010, 2025, (2015, 2025))
-    transmission = st.selectbox("Transmission", ["Any", "Automatic", "Manual"])
-    max_mileage = st.number_input("Max Mileage (km)", 0, 300000, 150000, 10000)
-    
-    # Automation settings
-    st.header("🤖 Automation")
-    
-    auto_monitor = st.checkbox(
-        "🔄 Auto-monitor (1min)", 
-        value=False,
-        help="Automatically check for new listings every 1 minute"
-    )
-    
-    auto_send = st.checkbox(
-        "📲 Auto-send to Telegram", 
-        value=False,
-        help="Automatically send new listings to Telegram"
-    )
-    
-    # Visual feedback
-    if auto_monitor and auto_send:
-        st.success("🚀 Full automation enabled! (1min)")
-    elif auto_monitor:
-        st.info("🔄 Monitoring enabled (1min)")
-    elif auto_send:
-        st.warning("📲 Auto-send needs monitoring")
-    else:
-        st.info("⏸️ Manual mode")
-    
-    return {
-        "custom_url": custom_url.strip(),
-        "car_make": car_make,
-        "car_model": car_model,
-        "price_range": price_range,
-        "year_range": year_range,
-        "transmission": transmission,
-        "max_mileage": max_mileage,
-        "auto_send": auto_send,
-        "auto_monitor": auto_monitor
-    }
-
-def _manual_send_listings(listings):
-    """Send listings manually to Telegram, logging failed messages with errors and retrying once if network error occurs."""
-    if not listings:
-        st.warning("No listings to send")
-        return
-
-    with st.spinner(f"Sending {len(listings)} listings..."):
-        from notifier.telegram import send_telegram_message, format_car_listing_message
-        success_count, failed = manual_send_listings(
-            listings,
-            send_telegram_message=send_telegram_message,
-            format_car_listing_message=format_car_listing_message,
-            parse_mode="HTML",
-            retry_on_network_error=True
-        )
-        if success_count > 0:
-            st.success(f"✅ Sent {success_count}/{len(listings)} listings!")
-        if failed:
-            st.error(f"❌ Failed to send {len(failed)} listings!")
-            for f in failed:
-                st.write(f"Listing #{f['index']} - {f['title']}")
-                st.code(f["error"], language="text")
-        elif success_count == 0:
-            st.error("❌ Failed to send listings")
-
-def _display_results(new_listings, all_listings):
-    """Display monitoring results in organized sections"""
-    st.header("📊 Results")
-    
-    # Results summary
-    col_summary1, col_summary2 = st.columns(2)
-    with col_summary1:
-        st.metric("🆕 New Listings", len(new_listings))
-    with col_summary2:
-        st.metric("📋 Total Listings", len(all_listings))
-    
-    # New listings section
-    if new_listings:
-        st.subheader("🆕 New Listings")
-        avg_new, _ = show_statistics_ui(new_listings, show_trend=False)
-        st.info(f"Average price: €{avg_new:,}")
-        
-        df_new = pd.DataFrame(new_listings)
-        df_new.insert(0, 'No.', range(1, len(df_new) + 1))
-        st.dataframe(df_new, hide_index=True, use_container_width=True)
-        
-        # Manual send button
-        if st.button("📤 Send New Listings Manually", type="primary"):
-            _manual_send_listings(new_listings)
-    else:
-        st.info("No new listings found")
-    
-    # All listings section
-    if all_listings:
-        with st.expander("📋 All Listings & Analytics", expanded=False):
-            show_statistics_ui(all_listings, show_trend=True)
-            df_all = pd.DataFrame(all_listings)
-            df_all.insert(0, 'No.', range(1, len(df_all) + 1))
-            st.dataframe(df_all, hide_index=True, use_container_width=True)
+# Import page modules
+from ui.pages.home import show_home_page
+from ui.pages.scraper import show_scraper_page
+from ui.pages.data_storage import show_data_storage_page
+from ui.pages.playground import show_playground_page
 
 def main():
-    """Main Streamlit application"""
-    st.title("🚗 CarAlyze - Smart Car Monitor")
-    st.caption("Real-time car listing monitoring with Telegram notifications")
+    """Main multi-page Streamlit application."""
+    st.set_page_config(
+        page_title="VroomSniffer - Car Monitor", 
+        page_icon="🚗", 
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+      # VroomSniffer Color Scheme CSS
+    clean_css = """
+    <style>
+    /* VroomSniffer Color Palette:
+    - Midnight Blue: #123C5A (primary)
+    - Vibrant Orange: #F57C00 (accent/CTA)
+    - Euro Green: #4CAF50 (success/deals)
+    - Ice Blue: #D7E9F7 (backgrounds)
+    - Graphite Gray: #333333 (text)
+    - Soft Gray: #F4F4F4 (light backgrounds)
+    */
+    
+    /* Hide Streamlit's default elements */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    
+    /* Hide Streamlit's automatic navigation links */
+    [data-testid="stSidebarNavLink"] {
+        display: none !important;
+    }
+    
+    /* Background and main styling */
+    .stApp {
+        background-color: #F4F4F4;
+    }
+    
+    .main .block-container {
+        background-color: white;
+        padding: 2rem;
+        border-radius: 8px;
+        box-shadow: 0 2px 6px rgba(18, 60, 90, 0.15);
+        margin: 1rem auto;
+        border: 1px solid #D7E9F7;
+    }    /* Sidebar styling - Darker background */
+    [data-testid="stSidebar"] {
+        background-color: #123C5A !important;
+    }
+    
+    [data-testid="stSidebar"] > div {
+        background-color: #123C5A !important;
+    }
+    
+    /* Sidebar text colors */
+    [data-testid="stSidebar"] h1, 
+    [data-testid="stSidebar"] h2, 
+    [data-testid="stSidebar"] h3 {
+        color: #ffffff !important;
+    }
+      [data-testid="stSidebar"] .stMarkdown p {
+        color: #D7E9F7 !important;
+    }
+    
+    [data-testid="stSidebar"] .stCaption {
+        color: #D7E9F7 !important;
+        opacity: 0.8;
+    }
+      /* Sidebar buttons - White background for inactive buttons */
+    [data-testid="stSidebar"] .stButton > button {
+        background-color: #ffffff !important;
+        color: #123C5A !important;
+        border: 1px solid #D7E9F7 !important;
+        border-radius: 6px !important;
+        font-weight: 500 !important;
+        transition: all 0.2s ease !important;
+    }
+    
+    [data-testid="stSidebar"] .stButton > button:hover {
+        background-color: #D7E9F7 !important;
+        border-color: #123C5A !important;
+        color: #123C5A !important;
+    }
+    
+    /* Active button styling - Orange for active buttons */
+    [data-testid="stSidebar"] .stButton > button[kind="primary"] {
+        background-color: #F57C00 !important;
+        color: #ffffff !important;
+        border-color: #F57C00 !important;
+    }
+    
+    [data-testid="stSidebar"] .stButton > button[kind="primary"]:hover {
+        background-color: #E06500 !important;
+        border-color: #E06500 !important;
+    }
+      /* Main content button styling */
+    .stButton > button {
+        border-radius: 6px;
+        border: 1px solid #123C5A;
+        background-color: white !important;
+        color: #333333 !important;
+        font-weight: 500;
+        transition: all 0.2s ease;
+    }
+    
+    .stButton > button:hover {
+        background-color: #D7E9F7 !important;
+        border-color: #123C5A !important;
+        color: #123C5A !important;
+    }
+      .stButton > button[kind="primary"] {
+        background-color: white !important;
+        color: #F57C00 !important;
+        border-color: #F57C00 !important;
+        font-weight: 600 !important;
+    }
+    
+    .stButton > button[kind="primary"]:hover {
+        background-color: #D7E9F7 !important;
+        border-color: #F57C00 !important;
+        color: #F57C00 !important;
+    }
+    
+    /* Text input styling */
+    .stTextInput > div > div > input {
+        border-radius: 6px;
+        border: 1px solid #D7E9F7;
+        background-color: white;
+        color: #333333;
+    }
+    
+    .stTextInput > div > div > input:focus {
+        border-color: #123C5A;
+        box-shadow: 0 0 0 1px #123C5A;
+    }
+    
+    /* Metrics styling */
+    [data-testid="metric-container"] {
+        background-color: #D7E9F7 !important;
+        border: 1px solid #123C5A !important;
+        border-radius: 6px !important;
+        padding: 1rem !important;
+    }
+    
+    /* Success/Info/Warning/Error styling */
+    .stSuccess {
+        background-color: #E8F5E8 !important;
+        border-left: 4px solid #4CAF50 !important;
+        color: #333333 !important;
+    }
+    
+    .stInfo {
+        background-color: #D7E9F7 !important;
+        border-left: 4px solid #123C5A !important;
+        color: #333333 !important;
+    }
+    
+    .stWarning {
+        background-color: #FFF3E0 !important;
+        border-left: 4px solid #F57C00 !important;
+        color: #333333 !important;
+    }
+    
+    .stError {
+        background-color: #FFEBEE !important;
+        border-left: 4px solid #F44336 !important;
+        color: #333333 !important;
+    }    /* Metrics styling - no boxes, just text */
+    [data-testid="metric-container"] {
+        background-color: transparent !important;
+        border: none !important;
+        border-radius: 0 !important;
+        padding: 0.5rem !important;
+        box-shadow: none !important;
+    }
+    
+    /* Headers */
+    h1, h2, h3 {
+        color: #333333 !important;
+    }
+    
+    /* Divider */
+    hr {
+        border-color: #D7E9F7;
+    }
+    
+    /* Divider */
+    hr {
+        border-color: #e0e0e0;
+    }
+    </style>
+    """
+    st.markdown(clean_css, unsafe_allow_html=True)
+      # Setup paths - use the same storage directory as scraper and CLI
+    root_dir = Path(__file__).parent.parent
+    storage_dir = root_dir / "storage"
+    storage_dir.mkdir(parents=True, exist_ok=True)
+    
+    all_old_path = storage_dir / "all_old_results.json"
+    latest_new_path = storage_dir / "latest_new_results.json"
     
     # Initialize session state
-    if 'last_auto_run' not in st.session_state:
-        st.session_state.last_auto_run = 0
-    if 'auto_run_count' not in st.session_state:
-        st.session_state.auto_run_count = 0
-    
-    # Sidebar filters
+    if 'current_page' not in st.session_state:
+        st.session_state.current_page = "🏠 Home"
+      # Sidebar navigation
     with st.sidebar:
-        filters = get_sidebar_filters()
-    
-    # Setup paths
-    root_dir = Path(__file__).parent.parent
-    listings_dir = root_dir / "storage" / "listings"
-    listings_dir.mkdir(parents=True, exist_ok=True)
-    all_old_path = listings_dir / "all_old_results.json"
-    latest_new_path = listings_dir / "latest_new_results.json"
-    
-    # Main layout with 3 columns
-    col1, col2, col3 = st.columns([2, 1, 1])
-    
-    # ================== COLUMN 1: Search & Results ==================
-    with col1:
-        st.header("🔍 Search Configuration")
-        # Show search URL
-        custom_url = filters.get("custom_url", "")
-        if custom_url:
-            st.code(custom_url, language="text")
-        else:
-            search_url = build_search_url_ui(filters)
-            st.code(search_url, language="text")
-        # Manual monitoring button
-        if st.button("🔍 Run Manual Check", type="primary", use_container_width=True):
-            with st.spinner("Checking for listings..."):
-                all_listings, new_listings = get_listings_for_filter(
-                    filters, all_old_path, latest_new_path, build_search_url_ui, root_dir
-                )
-            
-            # Auto-send if enabled
-            if filters.get("auto_send") and new_listings:
-                st.info(f"📱 Auto-sending {len(new_listings)} listings...")
-                _manual_send_listings(new_listings)
-            
-            # Display results
-            _display_results = lambda new, all_: display_results(new, all_, manual_send_listings_ui)
-            _display_results(new_listings, all_listings)
+        # Add VroomSniffer logo
+        try:
+            st.image("ui/resources/logo6.png", width=200)
+        except:
+            # Fallback if logo not found
+            st.title("VroomSniffer")
         
-        # Load and display cached results
-        else:
-            try:
-                all_dict = load_json_dict(all_old_path)
-                new_dict = load_json_dict(latest_new_path)
-                filter_key = get_filter_key(filters)
-                cached_all = all_dict.get(filter_key, [])
-                cached_new = new_dict.get(filter_key, [])
-                
-                if cached_all or cached_new:
-                    st.info("📋 Showing cached results (click 'Run Manual Check' for fresh data)")
-                    _display_results = lambda new, all_: display_results(new, all_, manual_send_listings_ui)
-                    _display_results(cached_new, cached_all)
-                else:
-                    st.info("💡 Click 'Run Manual Check' to start monitoring")
-            except:
-                st.info("💡 Click 'Run Manual Check' to start monitoring")
+        st.divider()
+        
+        # Navigation buttons
+        if st.button("🏠 Home", key="nav_home", use_container_width=True, 
+                    type="primary" if st.session_state.current_page == "🏠 Home" else "secondary"):
+            st.session_state.current_page = "🏠 Home"
+            st.rerun()
+            
+        if st.button("🔍 Scraper", key="nav_scraper", use_container_width=True, 
+                    type="primary" if st.session_state.current_page == "🔍 Scraper" else "secondary"):
+            st.session_state.current_page = "🔍 Scraper"
+            st.rerun()
+            
+        if st.button("📊 Data Storage", key="nav_data", use_container_width=True, 
+                    type="primary" if st.session_state.current_page == "📊 Data Storage" else "secondary"):
+            st.session_state.current_page = "📊 Data Storage"
+            st.rerun()
+            
+        if st.button("🎮 Playground", key="nav_playground", use_container_width=True, 
+                    type="primary" if st.session_state.current_page == "🎮 Playground" else "secondary"):
+            st.session_state.current_page = "🎮 Playground"
+            st.rerun()
+        
+        st.divider()
+        st.caption("VroomSniffer v1.0")
     
-    # ================== COLUMN 2: Auto-Monitoring ==================
-    with col2:
-        st.header("🔄 Auto-Monitor")
-        
-        if filters.get("auto_monitor"):
-            # Real-time countdown system
-            current_time = time.time()
-            time_since_last = current_time - st.session_state.last_auto_run
-            
-            # Placeholders for real-time updates
-            status_placeholder = st.empty()
-            countdown_placeholder = st.empty()
-            progress_placeholder = st.empty()
-            
-            if time_since_last >= 60:  # 1 minute = 60 seconds
-                # Time to run auto-monitoring
-                st.session_state.last_auto_run = current_time
-                st.session_state.auto_run_count += 1
-                
-                status_placeholder.success(f"🚀 Auto-run #{st.session_state.auto_run_count}")
-                
-                with st.spinner("Auto-monitoring..."):
-                    all_listings, new_listings = get_listings_for_filter(
-                        filters, all_old_path, latest_new_path, build_search_url_ui, root_dir
-                    )
-                
-                if new_listings:
-                    st.success(f"✅ Found {len(new_listings)} new listings!")
-                    
-                    # Auto-send if enabled
-                    if filters.get("auto_send"):
-                        st.info("📱 Auto-sending...")
-                        _manual_send_listings(new_listings)
-                else:
-                    st.info("No new listings found")
-                
-                # Reset timer for next cycle
-                st.session_state.last_auto_run = time.time()
-                time.sleep(2)
-                st.rerun()
-            
-            else:                # Show real-time countdown
-                remaining_seconds = 60 - int(time_since_last)
-                minutes = remaining_seconds // 60
-                seconds = remaining_seconds % 60
-                
-                status_placeholder.success("✅ **ACTIVE**")
-                countdown_placeholder.metric(
-                    "⏱️ Next Check", 
-                    f"{minutes:02d}:{seconds:02d}",
-                    help="Updates in real-time"
-                )
-                  # Progress bar
-                progress = (60 - remaining_seconds) / 60
-                progress_placeholder.progress(progress, text=f"{int(progress * 100)}% complete")
-                
-                # Run history
-                if st.session_state.auto_run_count > 0:
-                    st.caption(f"Completed: {st.session_state.auto_run_count} runs")
-                
-                # Auto-refresh every 2 seconds for smooth countdown
-                time.sleep(2)
-                st.rerun()
-        
-        else:
-            st.warning("⏸️ **DISABLED**")
-            st.info("✅ Enable in sidebar to activate")
-            st.caption("💡 Auto-monitoring will check for listings every 1 minute")
-    
-    # ================== COLUMN 3: Telegram Controls ==================
-    with col3:
-        st.header("📱 Telegram")
-        
-        # Status indicators
-        if filters.get("auto_send"):
-            st.success("✅ **AUTO-SEND ON**")
-        else:
-            st.info("⏸️ Manual mode")
-        telegram_test_button()
-        
+    # Page routing
+    if st.session_state.current_page == "🏠 Home":
+        show_home_page(all_old_path, latest_new_path)
+    elif st.session_state.current_page == "🔍 Scraper":
+        show_scraper_page(all_old_path, latest_new_path, root_dir)
+    elif st.session_state.current_page == "📊 Data Storage":
+        show_data_storage_page(all_old_path, latest_new_path)
+    elif st.session_state.current_page == "🎮 Playground":
+        show_playground_page(all_old_path, latest_new_path, root_dir)
+
 if __name__ == "__main__":
     main()

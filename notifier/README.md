@@ -16,8 +16,8 @@ The notifier module handles sending car listing notifications via Telegram. This
 1. Open Telegram and search for `@BotFather`
 2. Start a chat with BotFather and send `/newbot`
 3. Follow the prompts to create your bot:
-   - Choose a name for your bot (e.g., "Caralyze Car Scraper")
-   - Choose a username (must end with "bot", e.g., "caralyze_car_bot")
+   - Choose a name for your bot (e.g., "VroomSniffer Car Scraper")
+   - Choose a username (must end with "bot", e.g., "vroomsniffer_car_bot")
 4. Save the bot token that BotFather gives you
 
 ### 2. Get Your Chat ID
@@ -50,7 +50,7 @@ TELEGRAM_TEST_MODE=false
 from notifier.telegram import send_telegram_message, format_car_listing_message
 
 # Send a simple message
-success = send_telegram_message("Hello from Caralyze! 🚗")
+success = send_telegram_message("Hello from VroomSniffer! 🚗")
 
 # Send a formatted car listing
 listing = {
@@ -67,7 +67,7 @@ success = send_telegram_message(formatted_message)
 
 ```bash
 # First scrape some listings
-python cli/main.py run "https://www.kleinanzeigen.de/s-autos/bmw/k0c216"
+python cli/main.py run "https://www.example-marketplace.com/s-autos/bmw/k0c216"
 
 # List available listings
 python cli/main.py list
@@ -177,7 +177,7 @@ import json
 from notifier.telegram import format_car_listing_message, send_telegram_message
 
 # Load a listing from scraped data
-with open('cli/data/latest_results.json', 'r', encoding='utf-8') as f:
+with open('storage/latest_results.json', 'r', encoding='utf-8') as f:
     listings = json.load(f)
 
 # Send formatted message
@@ -258,7 +258,7 @@ import json
 import time
 
 # Load multiple listings
-with open('cli/data/latest_results.json', 'r', encoding='utf-8') as f:
+with open('storage/latest_results.json', 'r', encoding='utf-8') as f:
     listings = json.load(f)
 
 # Send first 3 listings
@@ -287,4 +287,4 @@ TELEGRAM_TEST_MODE=false
 
 ---
 
-*For more information about the Caralyze car scraper project, see the main README.md*
+*For more information about the VroomSniffer car scraper project, see the main README.md*
